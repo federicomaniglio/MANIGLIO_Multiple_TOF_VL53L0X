@@ -11,6 +11,11 @@
 #define XSHUT_PIN2 26
 #define XSHUT_PIN3 27
 
+// LED pin for WiFi connection status
+#define LED_WIFI_PIN 4
+#define LED_SENSOR_OK_PIN 2    // Aggiungi LED per sensori OK
+#define LED_ERROR_PIN 15       // Aggiungi LED per errori
+
 // New I2C addresses for the sensors
 #define SENSOR1_ADDRESS 0x30
 #define SENSOR2_ADDRESS 0x31
@@ -329,6 +334,14 @@ void sendSensorData() {
 void setup() {
   Serial.begin(115200);
 
+  pinMode(LED_WIFI_PIN, OUTPUT);
+  pinMode(LED_SENSOR_OK_PIN, OUTPUT);
+  pinMode(LED_ERROR_PIN, OUTPUT);
+  
+  digitalWrite(LED_WIFI_PIN, LOW);
+  digitalWrite(LED_SENSOR_OK_PIN, LOW);
+  digitalWrite(LED_ERROR_PIN, LOW);
+
   // Initialize I2C
   Wire.begin();
   Wire.setClock(400000);
@@ -340,6 +353,10 @@ void setup() {
   pinMode(XSHUT_PIN2, OUTPUT);
   pinMode(XSHUT_PIN3, OUTPUT);
 
+  // Configure LED pin as output
+  pinMode(LED_WIFI_PIN, OUTPUT);
+  digitalWrite(LED_WIFI_PIN, LOW);
+
   // Put all sensors in shutdown mode
   digitalWrite(XSHUT_PIN1, LOW);
   digitalWrite(XSHUT_PIN2, LOW);
@@ -350,6 +367,7 @@ void setup() {
 
   // Initialize sensors one by one
   if (!initializeSensor(sensor1, XSHUT_PIN1, SENSOR1_ADDRESS, 1)) {
+    digitalWrite(LED_ERROR_PIN, HIGH);  // LED errore ON
     Serial.println("Failed to initialize sensor 1 (Ovest). System halted.");
     while(1) delay(1000);
   }
@@ -364,6 +382,8 @@ void setup() {
     while(1) delay(1000);
   }
 
+  digitalWrite(LED_SENSOR_OK_PIN, HIGH);  // Sensori OK!
+
   // Start continuous measurement mode for all sensors
   sensor1.startContinuous();
   sensor2.startContinuous();
@@ -377,12 +397,19 @@ void setup() {
 
   while (WiFi.status() != WL_CONNECTED) {
     delay(500);
+    digitalWrite(LED_ERROR_PIN, !digitalRead(LED_ERROR_PIN));  // Lampeggia durante connessione
     Serial.print(".");
   }
+
+  digitalWrite(LED_ERROR_PIN, LOW);
+  digitalWrite(LED_WIFI_PIN, HIGH);  // WiFi connesso!
 
   Serial.println("\nWiFi connected!");
   Serial.print("IP address: ");
   Serial.println(WiFi.localIP());
+
+  // Turn on LED to indicate successful WiFi connection and IP acquisition
+  digitalWrite(LED_WIFI_PIN, HIGH);
 
   // Setup web server
   server.on("/", handleRoot);

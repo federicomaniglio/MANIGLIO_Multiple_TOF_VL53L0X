@@ -44,7 +44,7 @@ const char htmlPage[] PROGMEM = R"rawliteral(
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Sensori ToF - Real-Time</title>
+    <title>Sensori ToF - Vista Lidar</title>
     <style>
         body {
             font-family: Arial, sans-serif;
@@ -73,56 +73,20 @@ const char htmlPage[] PROGMEM = R"rawliteral(
             width: 100%;
         }
 
-        .compass {
+        .lidar-view {
             position: relative;
             width: 100%;
-            height: 500px;
+            height: 600px;
             margin: 30px 0;
-            display: flex;
-            justify-content: center;
-            align-items: center;
+            background: #1a1a2e;
+            border-radius: 10px;
+            overflow: hidden;
         }
 
-        .center-point {
-            position: absolute;
-            width: 30px;
-            height: 30px;
-            background: #ff4757;
-            border-radius: 50%;
-            z-index: 10;
-            box-shadow: 0 4px 8px rgba(0,0,0,0.3);
-        }
-
-        .sensor-bar {
-            position: absolute;
-            background: linear-gradient(to right, #4facfe 0%, #00f2fe 100%);
-            transition: all 0.3s ease;
-            border-radius: 5px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.2);
-        }
-
-        .sensor-west {
-            left: 0;
-            top: 50%;
-            transform: translateY(-50%);
-            height: 60px;
-            transform-origin: right center;
-        }
-
-        .sensor-north {
-            top: 0;
-            left: 50%;
-            transform: translateX(-50%);
-            width: 60px;
-            transform-origin: center bottom;
-        }
-
-        .sensor-east {
-            right: 0;
-            top: 50%;
-            transform: translateY(-50%);
-            height: 60px;
-            transform-origin: left center;
+        #lidar-canvas {
+            width: 100%;
+            height: 100%;
+            display: block;
         }
 
         .info-panel {
@@ -177,25 +141,22 @@ const char htmlPage[] PROGMEM = R"rawliteral(
                 grid-template-columns: 1fr;
             }
 
-            .compass {
+            .lidar-view {
                 height: 400px;
             }
         }
     </style>
 </head>
 <body>
-    <h1>🎯 Monitoraggio Sensori ToF Real-Time</h1>
+    <h1>🎯 Visualizzazione Lidar - Sensori ToF</h1>
 
     <div class="container">
         <div class="status" id="connection-status">
             <span class="disconnected">⚫ Connessione...</span>
         </div>
 
-        <div class="compass">
-            <div class="sensor-bar sensor-west" id="bar-west"></div>
-            <div class="sensor-bar sensor-north" id="bar-north"></div>
-            <div class="sensor-bar sensor-east" id="bar-east"></div>
-            <div class="center-point"></div>
+        <div class="lidar-view">
+            <canvas id="lidar-canvas"></canvas>
         </div>
 
         <div class="info-panel">
@@ -221,7 +182,28 @@ const char htmlPage[] PROGMEM = R"rawliteral(
 
     <script>
         const ws = new WebSocket('ws://' + window.location.hostname + ':81/');
-        const maxDistance = 2000; // Maximum distance in mm for scaling
+        const canvas = document.getElementById('lidar-canvas');
+        const ctx = canvas.getContext('2d');
+
+        // Distanza massima in mm per la scala
+        const maxDistance = 2000;
+
+        // Dati sensori
+        let sensorData = {
+            west: 1000,
+            north: 1000,
+            east: 1000
+        };
+
+        // Imposta dimensioni canvas
+        function resizeCanvas() {
+            canvas.width = canvas.offsetWidth;
+            canvas.height = canvas.offsetHeight;
+            drawLidarView();
+        }
+
+        window.addEventListener('resize', resizeCanvas);
+        resizeCanvas();
 
         ws.onopen = function() {
             console.log('WebSocket connesso');
@@ -242,30 +224,147 @@ const char htmlPage[] PROGMEM = R"rawliteral(
         ws.onmessage = function(event) {
             const data = JSON.parse(event.data);
 
-            // Update distance values
+            sensorData.west = data.west;
+            sensorData.north = data.north;
+            sensorData.east = data.east;
+
+            // Aggiorna valori testuali
             document.getElementById('dist-west').textContent = data.west + ' mm';
             document.getElementById('dist-north').textContent = data.north + ' mm';
             document.getElementById('dist-east').textContent = data.east + ' mm';
 
-            // Calculate bar widths/heights (inverse: closer = longer bar)
-            const westWidth = calculateBarSize(data.west);
-            const northHeight = calculateBarSize(data.north);
-            const eastWidth = calculateBarSize(data.east);
-
-            // Update visual bars
-            document.getElementById('bar-west').style.width = westWidth + 'px';
-            document.getElementById('bar-north').style.height = northHeight + 'px';
-            document.getElementById('bar-east').style.width = eastWidth + 'px';
+            // Ridisegna la vista lidar
+            drawLidarView();
         };
 
-        function calculateBarSize(distance) {
-            // Inverse relationship: closer objects = longer bars
-            // Clamp distance between 30mm and maxDistance
-            const clampedDist = Math.max(30, Math.min(distance, maxDistance));
-            // Scale from 30-2000mm to 200-30px (inverse)
-            const size = 200 - ((clampedDist - 30) / (maxDistance - 30) * 170);
-            return Math.max(30, size);
+        function drawLidarView() {
+            const width = canvas.width;
+            const height = canvas.height;
+
+            // Pulisci canvas
+            ctx.fillStyle = '#1a1a2e';
+            ctx.fillRect(0, 0, width, height);
+
+            // Calcola centro (robot position)
+            const centerX = width / 2;
+            const centerY = height * 0.75; // Robot più in basso per avere più spazio sopra
+
+            // Scala per la visualizzazione (pixel per mm)
+            const scale = Math.min(width, height) / (maxDistance * 2.2);
+
+            // Calcola posizioni delle pareti in base alle distanze
+            const westWallX = centerX - (sensorData.west * scale);
+            const eastWallX = centerX + (sensorData.east * scale);
+            const northWallY = centerY - (sensorData.north * scale);
+            const southWallY = height; // Base fissa in basso
+
+            // Disegna griglia di riferimento
+            ctx.strokeStyle = '#2a2a3e';
+            ctx.lineWidth = 1;
+            for (let i = 0; i < maxDistance; i += 200) {
+                const dist = i * scale;
+                // Cerchi concentrici
+                ctx.beginPath();
+                ctx.arc(centerX, centerY, dist, 0, Math.PI * 2);
+                ctx.stroke();
+            }
+
+            // Disegna linee di riferimento (raggi)
+            ctx.strokeStyle = '#2a2a3e';
+            ctx.beginPath();
+            ctx.moveTo(centerX, centerY);
+            ctx.lineTo(westWallX, centerY);
+            ctx.stroke();
+
+            ctx.beginPath();
+            ctx.moveTo(centerX, centerY);
+            ctx.lineTo(centerX, northWallY);
+            ctx.stroke();
+
+            ctx.beginPath();
+            ctx.moveTo(centerX, centerY);
+            ctx.lineTo(eastWallX, centerY);
+            ctx.stroke();
+
+            // Disegna le pareti
+            ctx.strokeStyle = '#00f2fe';
+            ctx.lineWidth = 4;
+            ctx.shadowColor = '#00f2fe';
+            ctx.shadowBlur = 10;
+
+            // Parete Ovest (verticale a sinistra)
+            ctx.beginPath();
+            ctx.moveTo(westWallX, Math.max(northWallY, 20));
+            ctx.lineTo(westWallX, southWallY);
+            ctx.stroke();
+
+            // Parete Est (verticale a destra)
+            ctx.beginPath();
+            ctx.moveTo(eastWallX, Math.max(northWallY, 20));
+            ctx.lineTo(eastWallX, southWallY);
+            ctx.stroke();
+
+            // Parete Nord (orizzontale in alto)
+            ctx.beginPath();
+            ctx.moveTo(westWallX, northWallY);
+            ctx.lineTo(eastWallX, northWallY);
+            ctx.stroke();
+
+            // Parete Sud (base fissa)
+            ctx.strokeStyle = '#ff4757';
+            ctx.beginPath();
+            ctx.moveTo(westWallX, southWallY);
+            ctx.lineTo(eastWallX, southWallY);
+            ctx.stroke();
+
+            ctx.shadowBlur = 0;
+
+            // Disegna il robot al centro
+            const robotSize = 20;
+            ctx.fillStyle = '#ff4757';
+            ctx.shadowColor = '#ff4757';
+            ctx.shadowBlur = 15;
+            ctx.beginPath();
+            ctx.arc(centerX, centerY, robotSize, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Disegna direzione del robot (triangolo che punta a nord)
+            ctx.fillStyle = '#fff';
+            ctx.shadowBlur = 0;
+            ctx.beginPath();
+            ctx.moveTo(centerX, centerY - robotSize + 5);
+            ctx.lineTo(centerX - 6, centerY - 5);
+            ctx.lineTo(centerX + 6, centerY - 5);
+            ctx.closePath();
+            ctx.fill();
+
+            // Aggiungi etichette distanze sulle pareti
+            ctx.fillStyle = '#00f2fe';
+            ctx.font = 'bold 14px Arial';
+            ctx.textAlign = 'center';
+            ctx.shadowBlur = 5;
+            ctx.shadowColor = '#000';
+
+            // Etichetta Ovest
+            ctx.save();
+            ctx.translate(westWallX - 15, centerY);
+            ctx.rotate(-Math.PI / 2);
+            ctx.fillText(sensorData.west + 'mm', 0, 0);
+            ctx.restore();
+
+            // Etichetta Nord
+            ctx.fillText(sensorData.north + 'mm', centerX, northWallY - 10);
+
+            // Etichetta Est
+            ctx.save();
+            ctx.translate(eastWallX + 15, centerY);
+            ctx.rotate(Math.PI / 2);
+            ctx.fillText(sensorData.east + 'mm', 0, 0);
+            ctx.restore();
         }
+
+        // Disegna vista iniziale
+        drawLidarView();
     </script>
 </body>
 </html>
